@@ -1,13 +1,17 @@
 from datetime import timedelta
 
-from django.contrib.auth.models import User
 from django.utils import timezone
 
+from germanium.annotations import data_provider
 from germanium.test_cases.default import GermaniumTestCase
-from germanium.tools import assert_equal
+from germanium.tools import assert_equal, assert_true, assert_false
 
-from auth_token.models import Token
+from freezegun import freeze_time
+
+from auth_token.models import Token, VerificationToken
 from auth_token.config import settings
+
+from .base import BaseTestCaseMixin
 
 
 __all__ = (
@@ -15,10 +19,10 @@ __all__ = (
 )
 
 
-class TokenTestCase(GermaniumTestCase):
+class TokenTestCase(BaseTestCaseMixin, GermaniumTestCase):
 
-    def test_should_return_proper_string_format_for_expiration(self):
-        user = User.objects._create_user('test', 'test@test.cz', 'test', is_staff=False, is_superuser=False)
+    @data_provider('create_user')
+    def test_should_return_proper_string_format_for_expiration(self, user):
         expired_token = Token.objects.create(user=user, ip='127.0.0.1')
         Token.objects.filter(pk=expired_token.pk).update(
             last_access=timezone.now() - timedelta(seconds=settings.MAX_TOKEN_AGE))
@@ -27,3 +31,41 @@ class TokenTestCase(GermaniumTestCase):
 
         non_expired_token = Token.objects.create(user=user, ip='127.0.0.1')
         assert_equal('0:59:59', non_expired_token.str_time_to_expiration.split('.')[0])
+
+    @data_provider('create_user')
+    def test_verification_token_should_be_created_and_old_one_should_be_deactivated(self, user):
+        token1 = VerificationToken.objects.deactivate_and_create(user)
+        assert_true(token1.is_valid)
+        assert_true(token1.is_active)
+        token2 = VerificationToken.objects.deactivate_and_create(user)
+        assert_true(token2.is_valid)
+        assert_true(token2.is_active)
+        token1.refresh_from_db()
+        assert_false(token1.is_valid)
+        assert_false(token1.is_active)
+
+    @data_provider('create_user')
+    def test_verification_token_with_different_slug_should_not_be_deactivated(self, user):
+        token1 = VerificationToken.objects.deactivate_and_create(user, slug='a')
+        assert_true(token1.is_valid)
+        assert_true(token1.is_active)
+        token2 = VerificationToken.objects.deactivate_and_create(user, slug='b')
+        assert_true(token2.is_valid)
+        assert_true(token2.is_active)
+        token1.refresh_from_db()
+        assert_true(token1.is_valid)
+        assert_true(token1.is_active)
+
+    @data_provider('create_user')
+    def test_valid_verification_token_with_same_slug_should_exists(self, user):
+        token = VerificationToken.objects.deactivate_and_create(user, slug='a')
+        assert_true(VerificationToken.objects.exists_valid(user, slug='a', verification_key=token.key))
+        assert_false(VerificationToken.objects.exists_valid(user, slug='b', verification_key=token.key))
+        assert_false(VerificationToken.objects.exists_valid(user, slug='a', verification_key='invalid key'))
+
+    @data_provider('create_user')
+    def test_verification_should_be_invalid_after_expiration(self, user):
+        token = VerificationToken.objects.deactivate_and_create(user, expiration_in_minutes=10)
+        with freeze_time(timezone.now() + timedelta(minutes=10), tick=True):
+            assert_false(token.is_valid)
+            assert_true(token.is_active)
