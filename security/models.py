@@ -21,6 +21,8 @@ try:
 except ImportError:
     from django.urls import get_resolver
 
+from chamber.utils.datetimes import make_naive
+
 from security.config import settings
 from security.utils import get_headers, remove_nul_from_string, regex_sub_groups_global
 
@@ -212,7 +214,7 @@ class LoggedRequest(models.Model):
     def __str__(self):
         return ' '.join(
             (force_text(v) for v in (
-                self.slug, self.response_code, self.request_timestamp.replace(tzinfo=None, microsecond=0)
+                self.slug, self.response_code, make_naive(self.request_timestamp.replace(microsecond=0))
             ) if v)
         )
 
