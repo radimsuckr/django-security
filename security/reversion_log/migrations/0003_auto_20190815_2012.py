@@ -19,11 +19,4 @@ class Migration(migrations.Migration):
                                     related_name='input_logged_request_revisions', to='security.InputLoggedRequest',
                                     verbose_name='logged request'),
         ),
-        migrations.AlterField(
-            model_name='inputrequestrevision',
-            name='revision',
-            field=models.OneToOneField(on_delete=django.db.models.deletion.CASCADE,
-                                       related_name='input_logged_request_revision', to='reversion.Revision',
-                                       verbose_name='revision'),
-        ),
     ]
